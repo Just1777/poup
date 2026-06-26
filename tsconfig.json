@@ -1,0 +1,24 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "types": [
+      "jest",
+      "react",
+      "react-native"
+    ]
+  },
+  "include": [
+    "app",
+    "lib",
+    "config",
+    "components",
+    "__tests__",
+    "*.ts",
+    "*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "supabase"
+  ]
+}

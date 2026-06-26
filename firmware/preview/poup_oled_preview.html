@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Poup OLED — Preview 128×64</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#11161c; color:#cfe8d8; font-family:-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:760px; margin:24px auto; padding:0 16px; }
+  h1 { font-size:18px; font-weight:700; margin:0 0 4px; }
+  .sub { color:#8aa; font-size:13px; margin:0 0 16px; }
+  canvas { width:640px; max-width:100%; image-rendering:pixelated; border-radius:14px;
+           box-shadow:0 8px 30px rgba(0,0,0,.5); display:block; background:#0a0f0a; }
+  .panel { margin-top:16px; display:flex; flex-wrap:wrap; gap:18px; }
+  .group { background:#1a222b; border:1px solid #243038; border-radius:12px; padding:12px 14px; }
+  .group h2 { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:#7fae93; margin:0 0 8px; }
+  button { background:#243038; color:#cfe8d8; border:1px solid #314150; border-radius:8px;
+           padding:7px 12px; font-size:13px; cursor:pointer; margin:0 6px 6px 0; }
+  button.on { background:#3FA66A; color:#05140c; border-color:#3FA66A; font-weight:700; }
+  label { display:block; font-size:12px; color:#9fb; margin:8px 0 2px; }
+  input[type=range] { width:180px; }
+  .val { color:#fff; font-variant-numeric:tabular-nums; }
+  .row { display:flex; align-items:center; gap:8px; }
+  code { background:#0d1217; padding:1px 5px; border-radius:5px; color:#8affc0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Poup — preview OLED 128×64</h1>
+  <p class="sub">Rendu 1-bit fidèle au sketch. Change l'état / les modes / la data sans téléverser.</p>
+
+  <canvas id="screen" width="640" height="320"></canvas>
+
+  <div class="panel">
+    <div class="group">
+      <h2>Mode d'affichage</h2>
+      <div id="modes"></div>
+    </div>
+    <div class="group">
+      <h2>État (manuel)</h2>
+      <div id="states"></div>
+      <label class="row"><input type="checkbox" id="auto" /> &nbsp;auto depuis la température</label>
+    </div>
+    <div class="group">
+      <h2>Données capteurs</h2>
+      <label>Chambre : <span class="val" id="tv">23</span> °C</label>
+      <input type="range" id="t" min="0" max="40" value="23" step="0.5" />
+      <label>Humidité : <span class="val" id="hv">52</span> %</label>
+      <input type="range" id="h" min="0" max="100" value="52" />
+      <label>Eau : <span class="val" id="wv">18</span> °C</label>
+      <input type="range" id="w" min="0" max="40" value="18" step="0.5" />
+    </div>
+  </div>
+  <p class="sub" style="margin-top:14px">
+    Modes : <code>Poup</code> (perso seul) · <code>Bulle</code> (Poup + phrase) ·
+    <code>Bandeau</code> (Poup + data) · <code>Carrousel</code> (enchaîne perso → phrase → data) ·
+    <code>Compact</code> (tout sur un écran).
+  </p>
+</div>
+
+<script>
+// ---------- "écran" 128x64 1-bit ----------
+const W = 128, H = 64, SCALE = 5;
+const cv = document.getElementById('screen');
+const ctx = cv.getContext('2d');
+cv.width = W * SCALE; cv.height = H * SCALE;
+const buf = new Uint8Array(W * H);
+
+function clear(){ buf.fill(0); }
+function px(x,y,c){ x|=0; y|=0; if(x<0||y<0||x>=W||y>=H) return; buf[y*W+x] = c?1:0; }
+function fillRect(x,y,w,h,c){ for(let j=0;j<h;j++) for(let i=0;i<w;i++) px(x+i,y+j,c); }
+function fillCircle(cx,cy,r,c){ for(let y=-r;y<=r;y++) for(let x=-r;x<=r;x++) if(x*x+y*y<=r*r) px(cx+x,cy+y,c); }
+function drawCircle(cx,cy,r,c){ for(let a=0;a<360;a+=5){ const rad=a*Math.PI/180; px(cx+Math.round(r*Math.cos(rad)), cy+Math.round(r*Math.sin(rad)), c);} }
+function drawLine(x0,y0,x1,y1,c){ x0|=0;y0|=0;x1|=0;y1|=0; const dx=Math.abs(x1-x0),dy=-Math.abs(y1-y0); let sx=x0<x1?1:-1,sy=y0<y1?1:-1,err=dx+dy; for(;;){ px(x0,y0,c); if(x0===x1&&y0===y1)break; const e2=2*err; if(e2>=dy){err+=dy;x0+=sx;} if(e2<=dx){err+=dx;y0+=sy;} } }
+function fillRoundRect(x,y,w,h,r,c){ fillRect(x+r,y,w-2*r,h,c); fillRect(x,y+r,w,h-2*r,c); fillCircle(x+r,y+r,r,c); fillCircle(x+w-r-1,y+r,r,c); fillCircle(x+r,y+h-r-1,r,c); fillCircle(x+w-r-1,y+h-r-1,r,c); }
+function fillTri(ax,ay,bx,by,ccx,ccy,c){ const minx=Math.min(ax,bx,ccx),maxx=Math.max(ax,bx,ccx),miny=Math.min(ay,by,ccy),maxy=Math.max(ay,by,ccy);
+  const area=(bx-ax)*(ccy-ay)-(by-ay)*(ccx-ax); if(area===0)return;
+  for(let y=miny;y<=maxy;y++)for(let x=minx;x<=maxx;x++){ const w0=((bx-x)*(ccy-y)-(by-y)*(ccx-x))/area, w1=((ccx-x)*(ay-y)-(ccy-y)*(ax-x))/area, w2=1-w0-w1; if(w0>=0&&w1>=0&&w2>=0) px(x,y,c);} }
+
+// texte : on rend dans un canvas caché puis on seuille en 1-bit (fidèle au look pixel)
+const tcv = document.createElement('canvas'); const tctx = tcv.getContext('2d');
+const FONT_H = 7;
+function textWidth(str){ tctx.font = `bold ${FONT_H}px monospace`; return Math.ceil(tctx.measureText(str).width); }
+function drawText(x,y,str,scale){ scale=scale||1; const w=Math.max(1,textWidth(str)); tcv.width=w; tcv.height=FONT_H;
+  tctx.clearRect(0,0,w,FONT_H); tctx.font=`bold ${FONT_H}px monospace`; tctx.textBaseline='top'; tctx.fillStyle='#fff'; tctx.fillText(str,0,0);
+  const d=tctx.getImageData(0,0,w,FONT_H).data;
+  for(let yy=0;yy<FONT_H;yy++)for(let xx=0;xx<w;xx++){ const i=(yy*w+xx)*4; if(d[i+3]>80 && d[i]>110){ for(let sy=0;sy<scale;sy++)for(let sx=0;sx<scale;sx++) px(x+xx*scale+sx,y+yy*scale+sy,1);} }
+  return w*scale;
+}
+function drawTextCentered(y,str,scale){ scale=scale||1; const w=textWidth(str)*scale; drawText(Math.round((W-w)/2),y,str,scale); }
+function wrapText(str,maxPx){ const words=str.split(' '); const lines=[]; let line='';
+  for(const word of words){ const test=line?line+' '+word:word; if(textWidth(test)<=maxPx){ line=test; } else { if(line)lines.push(line); line=word; } }
+  if(line)lines.push(line); return lines; }
+
+function render(){ ctx.fillStyle='#0a0f0a'; ctx.fillRect(0,0,cv.width,cv.height); ctx.fillStyle='#8affc0';
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++) if(buf[y*W+x]) ctx.fillRect(x*SCALE,y*SCALE,SCALE,SCALE); }
+
+// ---------- Poup ----------
+const BLACK=0, WHITE=1;
+function drawEye(x,y,state,blink,rr){ rr=rr||4;
+  if(blink){ fillRect(x-rr,y-1,rr*2+1,2,BLACK); return; }
+  if(state==='chaud'){ fillRect(x-rr,y,rr*2+1,2,BLACK); return; }   // yeux fatigués
+  fillCircle(x,y,rr,BLACK); fillCircle(x-1,y-1,1,WHITE);            // reflet
+}
+function drawMouth(cx,y,state){
+  if(state==='content'){ drawLine(cx-9,y,cx-4,y+5,BLACK); drawLine(cx-4,y+5,cx+4,y+5,BLACK); drawLine(cx+4,y+5,cx+9,y,BLACK); }
+  else if(state==='chaud'){ drawCircle(cx,y+2,3,BLACK); }
+  else if(state==='soif'){ drawLine(cx-5,y,cx+5,y,BLACK); fillTri(cx-1,y, cx+3,y, cx+1,y+5, BLACK); } // langue
+  else { drawLine(cx-5,y+2,cx+5,y+2,BLACK); }
+}
+function drawTeardrop(x,y,c){ fillCircle(x,y,3,c); fillTri(x,y-7, x-3,y, x+3,y, c); }
+
+// Poup paramétrable (centre + taille) pour s'adapter aux modes
+function drawPoup(cx,cy,w0,h0,state,t){
+  const dx = state==='froid' ? ((Math.floor(t/80)%2)?1:-1) : 0;
+  const squash = Math.round(2*Math.sin((t%2200)/2200*6.2832));
+  const w = w0 - squash, h = h0 + squash;
+  const x = Math.round(cx - w/2 + dx), y = Math.round(cy - h/2);
+  fillRoundRect(x,y,w,h,Math.min(20,Math.round(h/2.2)),WHITE);
+  const blink = (t%3000)<140;
+  const eDX=Math.round(w0*0.21), eY=Math.round(cy-h0*0.09), eR=Math.max(2,Math.round(h0*0.09));
+  drawEye(cx-eDX+dx,eY,state,blink,eR); drawEye(cx+eDX+dx,eY,state,blink,eR);
+  drawMouth(cx+dx, Math.round(cy+h0*0.22), state);
+  if(state==='chaud'){ const top=y+4, bot=y+h-4; const dropY = top + ((Math.floor(t/40))%(bot-top)); drawTeardrop(cx+Math.round(w0*0.16)+dx, dropY, BLACK); }
+}
+
+// ---------- phrases (ASCII pour la police OLED : accents/emoji retirés) ----------
+const PHRASES = {
+  content: ["On est au prime de fou", "Tout va bien ici"],
+  chaud:   ["Il fait chaud sa mere wsh", "Au frigo svp, on creve"],
+  froid:   ["C'est le pole nord ou quoi", "Mets le chauffage on clamse"],
+  soif:    ["On a soif, pitie de l'eau"],
+};
+let curPhrase = PHRASES.content[0];
+function pickPhrase(state){ const a=PHRASES[state]||PHRASES.content; curPhrase=a[Math.floor(Math.random()*a.length)]; }
+
+// ---------- data ----------
+function fmt(v,unit){ return (Math.round(v*10)/10)+unit; }
+function drawDataScreen(){
+  drawTextCentered(2,"ETAT DE LA PIECE",1);
+  drawLine(8,12,W-8,12,WHITE);
+  drawText(8,18,"Chambre",1);  drawText(78,16,fmt(sensors.t,"C"),2);
+  drawText(8,34,"Humidite",1); drawText(78,32,Math.round(sensors.h)+"%",2);
+  drawText(8,50,"Eau",1);      drawText(78,48,fmt(sensors.w,"C"),2);
+}
+function drawDataBand(){
+  drawLine(0,49,W,49,WHITE);
+  drawText(4,53,fmt(sensors.t,"C"),1);
+  drawText(50,53,Math.round(sensors.h)+"%",1);
+  drawText(92,53,fmt(sensors.w,"C")+"e",1);
+}
+function drawBubble(state,t){
+  drawPoup(34,38,40,38,state,t);
+  // phylactère
+  fillRoundRect(58,4,66,40,4,WHITE);
+  fillTri(58,28, 50,34, 60,38, WHITE); // queue de bulle vers Poup
+  const lines = wrapText(curPhrase, 60);
+  let yy=8; for(const ln of lines.slice(0,4)){ // texte NOIR dans la bulle blanche
+    // texte noir = on dessine en effaçant : ici on dessine blanc->non; on simule en traçant des pixels OFF
+    drawTextBlackInWhite(62,yy,ln); yy+=8; }
+}
+// texte noir sur zone blanche (pour la bulle) : on rend le texte puis on met ces pixels à 0
+function drawTextBlackInWhite(x,y,str){ const w=Math.max(1,textWidth(str)); tcv.width=w; tcv.height=FONT_H;
+  tctx.clearRect(0,0,w,FONT_H); tctx.font=`bold ${FONT_H}px monospace`; tctx.textBaseline='top'; tctx.fillStyle='#fff'; tctx.fillText(str,0,0);
+  const d=tctx.getImageData(0,0,w,FONT_H).data;
+  for(let yy=0;yy<FONT_H;yy++)for(let xx=0;xx<w;xx++){ const i=(yy*w+xx)*4; if(d[i+3]>80&&d[i]>110) px(x+xx,y+yy,BLACK); } }
+
+// ---------- modes ----------
+function drawPhraseScreen(state,t){
+  // petit Poup en haut + phrase qui s'affiche dessous
+  drawPoup(64,16,26,24,state,t);
+  const lines = wrapText(curPhrase, W-12);
+  let yy=36; for(const ln of lines.slice(0,3)){ drawTextCentered(yy,ln,1); yy+=10; }
+}
+const MODES = {
+  poup:     (t)=>{ drawPoup(64,34,58,46,state(),t); },
+  bulle:    (t)=>{ drawBubble(state(),t); },
+  bandeau:  (t)=>{ drawPoup(64,24,44,34,state(),t); drawDataBand(); },
+  carrousel:(t)=>{ const scene=Math.floor((t/4000)%3); if(scene===0) drawPoup(64,34,58,46,state(),t); else if(scene===1) drawPhraseScreen(state(),t); else drawDataScreen(); },
+  compact:  (t)=>{ drawPoup(22,22,30,28,state(),t); drawText(42,3,"Poup",1); const ls=wrapText(curPhrase,84); let yy=14; for(const l of ls.slice(0,3)){drawText(42,yy,l,1);yy+=9;} drawDataBand(); },
+};
+
+// ---------- état courant ----------
+const sensors = { t:23, h:52, w:18 };
+let manualState = 'content';
+let autoState = false;
+let curMode = 'compact';
+function computeFromTemp(){ if(sensors.t>27) return 'chaud'; if(sensors.t<15) return 'froid'; return 'content'; }
+function state(){ return autoState ? computeFromTemp() : manualState; }
+
+// rebascule la phrase quand l'état change
+let lastState = null;
+function maybeNewPhrase(){ const s=state(); if(s!==lastState){ lastState=s; pickPhrase(s);} }
+
+// ---------- UI ----------
+const STATES = [['content','Content'],['chaud','Chaud'],['froid','Froid'],['soif','Soif']];
+const MODELIST = [['poup','Poup'],['bulle','Bulle'],['bandeau','Bandeau'],['carrousel','Carrousel'],['compact','Compact']];
+function buildButtons(containerId, list, getCur, setCur){ const c=document.getElementById(containerId); c.innerHTML='';
+  list.forEach(([key,label])=>{ const b=document.createElement('button'); b.textContent=label; if(getCur()===key)b.classList.add('on');
+    b.onclick=()=>{ setCur(key); buildButtons(containerId,list,getCur,setCur); }; c.appendChild(b); }); }
+buildButtons('modes', MODELIST, ()=>curMode, k=>curMode=k);
+buildButtons('states', STATES, ()=>manualState, k=>{manualState=k; autoState=false; document.getElementById('auto').checked=false;});
+document.getElementById('auto').onchange = e=>{ autoState=e.target.checked; };
+function bindSlider(id, key, span){ const el=document.getElementById(id); const sp=document.getElementById(span);
+  el.oninput=()=>{ sensors[key]=parseFloat(el.value); sp.textContent=el.value; }; }
+bindSlider('t','t','tv'); bindSlider('h','h','hv'); bindSlider('w','w','wv');
+
+// ---------- boucle ----------
+const start = performance.now();
+function frame(now){ const t = now - start; clear(); maybeNewPhrase(); (MODES[curMode]||MODES.poup)(t); render(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

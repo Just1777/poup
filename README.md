@@ -28,11 +28,11 @@ app, the on-device OLED animation, and (soon) push notifications.
 
 ## 📱 Demo
 
-| Home (Poup + flowers) | History (charts) | On-device OLED |
+| Home (Poup + flowers) | History (charts) | Hardware |
 |---|---|---|
-| <img src="docs/media/app-home.png" width="230" /> | <img src="docs/media/app-history.png" width="230" /> | <img src="docs/media/oled-demo.gif" width="230" /> |
+| <img src="docs/media/app-home.png" width="230" /> | <img src="docs/media/app-history.png" width="230" /> | <img src="docs/media/hardware.jpg" width="230" /> |
 
-<p align="center"><img src="docs/media/hardware.jpg" alt="ESP32 + sensors + OLED" width="560" /></p>
+<p align="center"><img src="docs/media/oled-demo.gif" alt="ESP32 + sensors + OLED" width="560" /></p>
 
 ## 🧩 Architecture
 
